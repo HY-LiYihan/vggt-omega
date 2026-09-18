@@ -231,9 +231,15 @@ class VGGTService:
 
         h, w = tensor.shape[-2:]
         extr, intr = encoding_to_camera(preds["pose_enc"], (h, w))
+
+        def _to_numpy(t):  # (S,N,H,W[,1]) → (N,H,W)
+            if t.dim() == 5:
+                t = t[..., 0]
+            return t[0].float().cpu().numpy()
+
         arrays = {
-            "depth": preds["depth"][0, ..., 0].float().cpu().numpy(),        # (N,H,W)
-            "depth_conf": preds["depth_conf"][0, ..., 0].float().cpu().numpy(),
+            "depth": _to_numpy(preds["depth"]),        # (N,H,W)
+            "depth_conf": _to_numpy(preds["depth_conf"]),  # (N,H,W), head 已 squeeze 为 4 维
             "extrinsics": extr[0].float().cpu().numpy(),                      # (N,3,4)
             "intrinsics": intr[0].float().cpu().numpy(),                     # (N,3,3)
         }
