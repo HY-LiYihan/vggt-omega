@@ -64,6 +64,17 @@ MAX_IMAGES = 64                  # images 模式最多图片数
 MAX_FRAMES = 64                  # video 模式最多采样帧数
 PATCH_SIZE = 16
 
+
+def gpu_free_gb():
+    """全局空闲显存 (GB, 含其他进程占用); 查询失败返回 None (跳过防护)。"""
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        info = pynvml.nvmlDeviceGetMemoryInfo(pynvml.nvmlDeviceGetHandleByIndex(0))
+        return (info.total - info.used) / 2**30
+    except Exception:
+        return None
+
 # ---------------- 帧协议 ----------------
 
 
@@ -216,6 +227,19 @@ class VGGTService:
             num_frames = len(pils)
         else:
             raise ValueError(f"mode 须为 images|video: {mode}")
+
+        # 显存预算检查: 预估前向增量, 不足则直接拒绝。
+        # 系数校准 (RTX 4080 Laptop 实测): 512@16帧 增量~1.8GB / 512@32帧 增量~3.5GB,
+        # 外加 0.8GB 余量。宁可拒绝也不让请求进入 WDDM 换页 (前向劣化百倍且占住 GPU 锁)。
+        free_gb = gpu_free_gb()
+        if free_gb is not None:
+            # PyTorch 缓存块可被新前向复用, nvml 视角会低估本进程实际可用量, 需补回
+            free_gb += torch.cuda.memory_reserved() / 2**30
+            need_gb = 0.8 + num_frames * (image_resolution / 512) ** 2 * 0.11
+            if need_gb > free_gb:
+                raise ValueError(
+                    f"显存不足: 预估本次前向需 {need_gb:.1f}GB, 当前 GPU 空闲 {free_gb:.1f}GB; "
+                    f"请降低帧数 (当前 {num_frames}) 或分辨率 (当前 {image_resolution})")
 
         t_dec = time.perf_counter()
         try:
