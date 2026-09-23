@@ -247,6 +247,9 @@ class VGGTService:
             await send_array(writer, name, arr)
 
         pose_enc = preds["pose_enc"][0].float().cpu().numpy()  # (N,9): fov_h=7, fov_w=8
+        log.info("推理完成(%s): %s %d帧 %dx%d | 解码 %.1fs 前向 %.1fs",
+                 writer.get_extra_info("peername"), mode, num_frames, w, h,
+                 decode_ms / 1000, infer_ms / 1000)
         await send_json(writer, {
             "type": "done",
             "mode": mode, "frames": num_frames,
